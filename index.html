@@ -54,7 +54,28 @@
 
     <canvas id="gameCanvas"></canvas>
 
-    <div id="start-screen" class="screen">
+    <div id="intro-screen" class="screen">
+        <div class="title">탕탕 서바이벌</div>
+        <div style="background: #2c3e50; padding: 30px; border-radius: 10px; border: 3px solid #34495e; max-width: 600px; text-align: center; margin-bottom: 30px;">
+            <h3 style="color: #f1c40f; margin-top: 0;">조작 방법</h3>
+            <p style="font-size: 18px; line-height: 1.6; color: #bdc3c7;">
+                <strong>이동:</strong> W, A, S, D 또는 방향키 (↑, ↓, ←, →)<br>
+                <strong>일시정지:</strong> P 또는 ESC 키<br>
+                <strong>공격:</strong> 무기 획득 시 자동 공격
+            </p>
+            <hr style="border: 1px solid #34495e; margin: 20px 0;">
+            <h3 style="color: #f1c40f;">게임 목표</h3>
+            <p style="font-size: 18px; line-height: 1.6; color: #bdc3c7;">
+                총 <strong>3개의 웨이브</strong>로 진행됩니다.<br>
+                각 웨이브에서 <strong>20초</strong>를 버티면 <strong>보스</strong>가 등장합니다.<br>
+                보스를 처치하여 무기를 진화시키고,<br>마지막 최종 보스를 제압하세요!
+            </p>
+        </div>
+        <!-- 버튼을 누르면 무기 선택 창으로 넘어갑니다 -->
+        <button class="btn-action btn-resume" onclick="showWeaponSelect()">시작 무기 고르기</button>
+    </div>
+
+    <div id="start-screen" class="screen" style="display: none;">
         <div class="title">시작 무기를 선택하세요</div>
         <div class="grid-menu" id="start-menu"></div>
     </div>
@@ -177,6 +198,12 @@ function togglePause() {
     gameState = isPaused ? 'PAUSED' : 'PLAYING';
     document.getElementById('pause-screen').style.display = isPaused ? 'flex' : 'none';
     if (!isPaused) lastSecondTime = Date.now(); 
+}
+
+function showWeaponSelect() {
+    // 소개 화면을 숨기고 무기 선택 화면을 보여줍니다.
+    document.getElementById('intro-screen').style.display = 'none';
+    document.getElementById('start-screen').style.display = 'flex';
 }
 
 function setupMenus() {
