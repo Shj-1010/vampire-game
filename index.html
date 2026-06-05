@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>초미니 서바이버즈: 가치 합의 최댓값</title>
+    <title>탕탕 서바이벌</title>
     <style>
         * { box-sizing: border-box; user-select: none; }
         body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: 'Malgun Gothic', sans-serif; }
@@ -95,9 +95,11 @@ let lastSecondTime = Date.now();
 
 const player = {
     x: canvas.width / 2, y: canvas.height / 2,
-    radius: 16, hp: 100, maxHp: 100, speed: 4, color: '#3498db',
+    radius: 16, hp: 100, maxHp: 100, speed: 3.2, 
+    color: '#3498db',
     weapon: null, facingAngle: 0,
-    lifesteal: 0, ampDamage: 1, hpRegenOnKill: 0, hasShield: false
+    lifesteal: 0, ampDamage: 1, hpRegenOnKill: 0, hasShield: false,
+    stunTimer: 0
 };
 
 const weaponTrees = {
@@ -240,6 +242,8 @@ function applyUpgrade(choice) {
         if (choice.id === '피해흡혈') player.lifesteal = 0.3;
     }
 
+    player.hp = player.maxHp;
+
     document.getElementById('weapon-info').innerText = `무기: ${player.weapon.name}`;
     document.getElementById('upgrade-screen').style.display = 'none';
     document.getElementById('btn-pause-ui').style.display = 'block';
@@ -266,7 +270,6 @@ function startTypewriter() {
     const targetEl = document.getElementById('clear-text');
     targetEl.innerHTML = '';
     
-    // 클리어 텍스트 수정 적용
     const lines = [
         "🏆 축하합니다! 모든 웨이브와 최종 보스를 제압했습니다.",
         "출력 설명:\n",
@@ -309,8 +312,13 @@ function spawnEnemy() {
         let type = 'normal';
         let hp = 15 * currentWave;
         if (currentWave > 1) hp *= 1.5;
+        if (currentWave === 3) hp *= 1.5; 
         
-        let speed = 1.5 + (currentWave - 1) * 0.7 + Math.random() * 0.5;
+        let speed = (1.5 + (currentWave - 1) * 0.3 + Math.random() * 0.5) * 1.3;
+        
+        // 추가 변경사항: 3스테이지 잡몹 속도 30% 감소
+        if (currentWave === 3) speed *= 0.7;
+
         let damage = 5 * currentWave;
         let size = 12;
         let color = '#e74c3c';
@@ -318,8 +326,9 @@ function spawnEnemy() {
         if (currentWave === 3 && Math.random() < 0.4) {
             type = 'ranged';
             color = '#f39c12';
-            hp = 38;
-            speed = 2.0;
+            hp = 38 * 1.5; 
+            // 3스테이지 원거리 몹도 30% 감소 적용
+            speed = 2.0 * 1.3 * 0.7;
         }
 
         enemies.push({ x, y, hp, maxHp: hp, speed, damage, size, color, type, throwCooldown: Math.random()*100, slowTimer: 0, fireTimer: 0 });
@@ -337,19 +346,23 @@ function spawnBoss() {
     let bossHp = currentWave * 400;
     let bossDamage = 12 * currentWave;
 
-    if (currentWave === 1) { bossHp = bossHp * 0.7; }
+    if (currentWave === 1) { bossHp = bossHp * 1.0; }
     else if (currentWave === 2 || currentWave === 3) {
-        bossHp = bossHp * 0.7;
+        bossHp = bossHp * 1.0;
         bossDamage = bossDamage * 1.5;
     }
 
+    let bossSpeed = (1.0 + (currentWave * 0.2)) * 1.5;
+
     enemies.push({
-        x, y, hp: bossHp, maxHp: bossHp, speed: 1.0 + (currentWave * 0.2), damage: bossDamage,
+        x, y, hp: bossHp, maxHp: bossHp, speed: bossSpeed, damage: bossDamage,
         size: 30, color: currentWave === 3 ? '#d63031' : '#8e44ad',
         type: 'boss', bossWave: currentWave, 
-        gunCooldown: 0, laserTimer: 0, slowTimer: 0, fireTimer: 0
+        gunCooldown: 0, laserTimer: 0, slowTimer: 0, fireTimer: 0,
+        dashed70: false, dashed30: false, dashState: 'none', dashTimer: 0, dashAngle: 0, baseSpeed: bossSpeed,
+        burst70: false, burst30: false, burstState: 'none', burstTimer: 0, burstCount: 0 // 2스테이지 보스 발악용 변수
     });
-    document.getElementById('wave-info').innerText = `WAVE ${currentWave} (⚠️보스 출현!)`;
+    document.getElementById('wave-info').innerText = `WAVE ${currentWave} (보스 출현!)`;
 }
 
 setInterval(spawnEnemy, 400);
@@ -385,7 +398,7 @@ function runWeaponSystem() {
         weaponCooldown = 60;
     }
     else if (wid === '전방위산탄총') {
-        for(let a=0; a<Math.PI*2; a+=Math.PI/4) createBullet(player.x, player.y, a, 5, 10, 'bullet');
+        for(let a=0; a<Math.PI*2; a+=Math.PI/8) createBullet(player.x, player.y, a, 6, 30, 'big_pierce_bullet');
         weaponCooldown = 50;
     }
     else if (wid === '중기관총') {
@@ -415,20 +428,17 @@ function runWeaponSystem() {
     else if (wid.startsWith('칼')) {
         let arc = 30;
         let range = 65;
-        // 검 기본 데미지 200% 상향 적용 (15 -> 45)
         let dmg = 45;
         let type = 'normal';
 
         if (wid === '칼범위증가') arc = 90;
         if (wid === '칼전방위') arc = 360;
         if (wid === '칼사거리증가') { arc = 90; range = 150; }
-        // 뎀증 업그레이드 수치 200% 상향 적용 (40 -> 120)
         if (wid === '칼데미지증가') { arc = 30; dmg = 120; }
-        // 특수 업그레이드 수치 200% 상향 적용 (20 -> 60)
         if (choiceIn(wid, ['칼화염', '칼얼음'])) { arc = 30; dmg = 60; type = wid === '칼화염' ? 'fire' : 'ice'; }
 
         triggerSwordSlash(arc, range, dmg, type, angle);
-        weaponCooldown = 40;
+        weaponCooldown = 20;
     }
     else if (wid.startsWith('마법') || wid === '기적의방패' || wid === '팔라딘검' || wid === '어둠블랙홀' || wid === '피해흡혈') {
         let isDark = wid.includes('어둠') || wid === '피해흡혈';
@@ -444,9 +454,15 @@ function runWeaponSystem() {
 function choiceIn(val, arr) { return arr.includes(val); }
 
 function createBullet(x, y, angle, speed, dmg, type) {
+    let r = 4;
+    let c = '#f1c40f';
+    if (type === 'missile') r = 8;
+    if (type === 'pierce_bullet') c = '#00cec9';
+    if (type === 'big_pierce_bullet') { r = 10; c = '#00cec9'; } 
+
     projectiles.push({
         x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
-        radius: type==='missile'? 8 : 4, color: type==='pierce_bullet'? '#00cec9' : '#f1c40f', dmg: dmg * player.ampDamage,
+        radius: r, color: c, dmg: dmg * player.ampDamage,
         owner: 'player', type: type, life: 180, hitEnemies: []
     });
 }
@@ -457,7 +473,7 @@ function createBoomerang(angle, dmg, subType) {
         x: player.x, y: player.y, vx: Math.cos(angle)*6, vy: Math.sin(angle)*6, radius: size, 
         color: subType.includes('화염') ? '#ff4757' : '#2ed573', dmg: dmg * player.ampDamage, 
         owner: 'player', type: 'boomerang', subType: subType, state: 'out', timer: 45, 
-        hitEnemies: [] // 부메랑 다단히트 방지 리스트 추가
+        hitEnemies: [] 
     });
 }
 
@@ -534,6 +550,7 @@ function update() {
         }
     }
 
+    
     runWeaponSystem();
     runSpecialWeaponTicks();
 
@@ -559,7 +576,6 @@ function update() {
         if (p.type === 'boomerang') {
             if (p.state === 'out') {
                 p.x += p.vx; p.y += p.vy; p.timer--;
-                // 되돌아올 때 hitEnemies 기록을 리셋하여 돌아올 때 1번 더 타격 가능하게 만듦
                 if(p.timer <= 0) { p.state = 'return'; p.hitEnemies = []; }
             } else {
                 let rAngle = Math.atan2(player.y - p.y, player.x - p.x);
@@ -582,7 +598,7 @@ function update() {
             for (let j = enemies.length - 1; j >= 0; j--) {
                 let e = enemies[j];
                 if (getDist(p.x, p.y, e.x, e.y) <= p.radius + e.size) {
-                    if (p.type === 'pierce_bullet') {
+                    if (p.type === 'pierce_bullet' || p.type === 'big_pierce_bullet') {
                         if (!p.hitEnemies.includes(e)) {
                             p.hitEnemies.push(e);
                             damageEnemy(e, p.dmg);
@@ -604,7 +620,6 @@ function update() {
                     }
 
                     if (p.type === 'boomerang') {
-                        // 다단히트 방지: 한 번 긁은 적은 hitEnemies 배열에 넣어 무시
                         if (!p.hitEnemies.includes(e)) {
                             p.hitEnemies.push(e);
                             if (p.subType.includes('화염')) e.fireTimer = 150;
@@ -623,8 +638,12 @@ function update() {
                 }
             }
         } else { 
+            // 보스 투사체 피격 시 무적권 게임오버 체크 로직 추가
             if (getDist(p.x, p.y, player.x, player.y) <= p.radius + player.radius) {
-                if (!player.hasShield) player.hp -= p.dmg;
+                if (!player.hasShield || p.isBossAttack) { 
+                    player.hp -= p.dmg;
+                    if (player.hp <= 0) gameOverAction();
+                }
                 projectiles.splice(i, 1);
             }
         }
@@ -645,10 +664,9 @@ function update() {
 
     for (let i = enemies.length - 1; i >= 0; i--) {
         let e = enemies[i];
-
         let currentSpeed = e.speed;
-        if (e.slowTimer > 0) { e.slowTimer--; currentSpeed *= 0.5; }
         
+        if (e.slowTimer > 0) { e.slowTimer--; currentSpeed *= 0.5; }
         if (e.fireTimer > 0) { e.fireTimer--; if(e.fireTimer % 20 === 0) e.hp -= 8; } 
 
         if (e.hp <= 0) {
@@ -663,25 +681,94 @@ function update() {
         }
 
         let tAngle = Math.atan2(player.y - e.y, player.x - e.x);
-        e.x += Math.cos(tAngle) * currentSpeed; e.y += Math.sin(tAngle) * currentSpeed;
+        
+        if (e.type === 'boss') {
+            let hpRatio = e.hp / e.maxHp;
+            if (hpRatio <= 0.7 && !e.dashed70) {
+                e.dashed70 = true;
+                if (e.bossWave === 1 || e.bossWave === 3) {
+                    if (e.bossWave === 3) { e.dashState = 'warning'; e.dashTimer = 42; } 
+                    else { e.dashState = 'dashing'; e.dashTimer = 40; } 
+                    e.dashAngle = tAngle;
+                }
+            }
+            if (hpRatio <= 0.3 && !e.dashed30) {
+                e.dashed30 = true;
+                if (e.bossWave === 1 || e.bossWave === 3) {
+                    if (e.bossWave === 3) { e.dashState = 'warning'; e.dashTimer = 42; }
+                    else { e.dashState = 'dashing'; e.dashTimer = 40; }
+                    e.dashAngle = tAngle;
+                }
+            }
+
+            if (e.dashState === 'warning') {
+                e.dashTimer--;
+                currentSpeed = 0; 
+                tAngle = e.dashAngle; 
+                if (e.dashTimer <= 0) {
+                    e.dashState = 'dashing';
+                    e.dashTimer = 25; 
+                }
+            } else if (e.dashState === 'dashing') {
+                e.dashTimer--;
+                currentSpeed = e.baseSpeed * (e.bossWave === 3 ? 8 : 9); 
+                tAngle = e.dashAngle; 
+                if (e.dashTimer <= 0) {
+                    e.dashState = 'none';
+                }
+            } else {
+                currentSpeed = e.baseSpeed; 
+            }
+        }
+
+        e.x += Math.cos(tAngle) * currentSpeed; 
+        e.y += Math.sin(tAngle) * currentSpeed;
 
         if (e.type === 'boss' && e.bossWave === 2) {
-            e.gunCooldown++;
-            if (e.gunCooldown > 75) { 
-                projectiles.push({
-                    x: e.x, y: e.y, vx: Math.cos(tAngle) * 5, vy: Math.sin(tAngle) * 5,
-                    radius: 14, color: '#f1c40f', dmg: e.damage, owner: 'enemy', type: 'bullet', life: 140
-                });
-                e.gunCooldown = 0;
+            let hpRatio = e.hp / e.maxHp;
+            
+            // --- 2스테이지 보스 발악 패턴 (70%, 30% 체력) ---
+            if (hpRatio <= 0.7 && !e.burst70) { e.burst70 = true; e.burstState = 'active'; e.burstCount = 3; e.burstTimer = 0; }
+            if (hpRatio <= 0.3 && !e.burst30) { e.burst30 = true; e.burstState = 'active'; e.burstCount = 3; e.burstTimer = 0; }
+
+            if (e.burstState === 'active') {
+                e.burstTimer++;
+                if (e.burstTimer > 15) { 
+                    // 16방향 발사
+                    for(let a=0; a<Math.PI*2; a+=Math.PI/8) {
+                        projectiles.push({
+                            x: e.x, y: e.y, vx: Math.cos(a) * 5, vy: Math.sin(a) * 5,
+                            radius: 12, color: '#f1c40f', dmg: e.damage, owner: 'enemy', type: 'boss_rock', life: 160, isBossAttack: true
+                        });
+                    }
+                    e.burstCount--;
+                    e.burstTimer = 0;
+                    if (e.burstCount <= 0) e.burstState = 'none';
+                }
+            } else {
+                e.gunCooldown++;
+                if (e.gunCooldown > 40) { 
+                    // 120도 부채꼴 방향으로 5발 분산 사격
+                    for(let k=-2; k<=2; k++) {
+                        let fireAngle = tAngle + k*(Math.PI/6);
+                        projectiles.push({
+                            x: e.x, y: e.y, 
+                            vx: Math.cos(fireAngle) * 5, 
+                            vy: Math.sin(fireAngle) * 5,
+                            radius: 12, color: '#f1c40f', dmg: e.damage, owner: 'enemy', type: 'boss_rock', life: 160, isBossAttack: true
+                        });
+                    }
+                    e.gunCooldown = 0;
+                }
             }
         }
 
         if (e.type === 'boss' && e.bossWave === 3) {
             e.gunCooldown++;
-            if (e.gunCooldown > 60) { 
+            if (e.gunCooldown > 30) { 
                 projectiles.push({
                     x: e.x, y: e.y, vx: Math.cos(tAngle) * 4.5, vy: Math.sin(tAngle) * 4.5,
-                    radius: 14, color: '#e67e22', dmg: e.damage * 1.2, owner: 'enemy', type: 'big_bullet', life: 160
+                    radius: 14, color: '#e67e22', dmg: e.damage * 1.2, owner: 'enemy', type: 'big_bullet', life: 160, isBossAttack: true
                 });
                 e.gunCooldown = 0;
             }
@@ -712,11 +799,32 @@ function update() {
         }
 
         if (getDist(player.x, player.y, e.x, e.y) <= player.radius + e.size) {
-            player.hp -= (e.type === 'boss' ? e.damage / 30 : e.damage / 45); 
+            if (e.type === 'boss' && e.dashState === 'dashing') {
+                player.x += Math.cos(e.dashAngle) * 150;
+                player.y += Math.sin(e.dashAngle) * 150;
+                player.hp -= e.damage; 
+            } else {
+                player.hp -= (e.type === 'boss' ? e.damage / 30 : e.damage / 45); 
+            }
+            
             if (player.hp <= 0) { gameOverAction(); }
         }
 
         ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI*2); ctx.fillStyle = e.color; ctx.fill();
+
+        if (e.type === 'boss' && e.dashState === 'warning') {
+            ctx.save(); 
+            ctx.translate(e.x, e.y); 
+            ctx.rotate(e.dashAngle);
+            ctx.beginPath(); 
+            ctx.moveTo(0, 0); 
+            ctx.lineTo(2000, 0);
+            ctx.strokeStyle = 'rgba(231, 76, 60, 0.7)'; 
+            ctx.lineWidth = 10; 
+            ctx.setLineDash([20, 10]);
+            ctx.stroke(); 
+            ctx.restore();
+        }
 
         if (e.hp < e.maxHp) {
             ctx.fillStyle = '#c0392b'; ctx.fillRect(e.x - e.size, e.y - e.size - 8, e.size*2, 4);
@@ -776,6 +884,7 @@ function update() {
 
     ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI*2); ctx.fillStyle = player.color; ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+
 
     if (player.hasShield) {
         ctx.beginPath(); ctx.strokeStyle = '#55efc4'; ctx.lineWidth = 2; ctx.arc(player.x, player.y, player.radius + 12, 0, Math.PI*2); ctx.stroke();
